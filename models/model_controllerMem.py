@@ -188,21 +188,22 @@ class model_controllerMem(nn.Module):
             # h = state_past.unsqueeze(0) #[32,48]    
             # h2 = info_future.unsqueeze(0) #[32,48]
             
-            hp =  state_past
-            hf =  info_future.unsqueeze(0)
+            # hp =  state_past
+            # hf =  info_future.unsqueeze(0)
             
             input_dec = info_total
             state_dec = zero_padding
             for i in range(self.future_len):
                 
-                att_wts = self.softmax_att(self.attn2(self.tanh(self.attn1(torch.cat(  (hp.repeat(hp.shape[0], 1, 1), #[1,32,96]
-                                                                                     hf.repeat(hf.shape[0], 1, 1) )  , 2))))) #[1,32,1]
+                # att_wts = self.softmax_att(self.attn2(self.tanh(self.attn1(torch.cat(  (hp.repeat(hp.shape[0], 1, 1), #[1,32,96]
+                #                                                                      hf.repeat(hf.shape[0], 1, 1) )  , 2))))) #[1,32,1]
 
-                ip = att_wts.repeat(1, 1, input_dec.shape[2])*input_dec # before [1,96]
-                ip = ip.unsqueeze(1)
-                ip = ip.sum(dim=0) # [1,1,96]
+                # ip = att_wts.repeat(1, 1, input_dec.shape[2])*input_dec # before [1,96]
+                # ip = ip.unsqueeze(1)
+                # ip = ip.sum(dim=0) # [1,1,96]
 
-                output_decoder, state_dec = self.decoder(ip, state_dec)
+                # output_decoder, state_dec = self.decoder(ip, state_dec)
+                output_decoder, state_dec = self.decoder(input_dec, state_dec)
                 displacement_next = self.FC_output(output_decoder)
                 coords_next = present + displacement_next.squeeze(0).unsqueeze(1)
                 prediction_single = torch.cat((prediction_single, coords_next), 1)
