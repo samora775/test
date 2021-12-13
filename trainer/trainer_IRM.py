@@ -85,9 +85,7 @@ class Trainer:
         self.mem_n2n = model_memory_IRM(self.settings, self.model)
         self.mem_n2n.past_len = config.past_len
         self.mem_n2n.future_len = config.future_len
-        
-        # self.mem_n2n.att_size = config.att_size
-        
+
         self.criterionLoss = nn.MSELoss()
         self.opt = torch.optim.Adam(self.mem_n2n.parameters(), lr=config.learning_rate)
         self.iterations = 0
@@ -111,9 +109,7 @@ class Trainer:
         self.writer.add_text('Training Configuration', 'learning rate init: ' + str(self.config.learning_rate), 0)
         self.writer.add_text('Training Configuration', 'dim_embedding_key: ' + str(self.settings["dim_embedding_key"]),
                              0)
-        
-        # self.writer.add_graph(self.model)
-    
+
     def write_details(self):
         """
         Serialize configuration parameters to file.
@@ -133,27 +129,19 @@ class Trainer:
 
         # freeze autoencoder layers
         for param in self.mem_n2n.conv_past.parameters():
-            param.requires_grad = False
+            param.requires_grad = True
         for param in self.mem_n2n.conv_fut.parameters():
-            param.requires_grad = False
+            param.requires_grad = True
         for param in self.mem_n2n.encoder_past.parameters():
-            param.requires_grad = False
+            param.requires_grad = True
         for param in self.mem_n2n.encoder_fut.parameters():
-            param.requires_grad = False
+            param.requires_grad = True
         for param in self.mem_n2n.linear_controller.parameters():
-            param.requires_grad = False
+            param.requires_grad = True
         for param in self.mem_n2n.decoder.parameters():
-            param.requires_grad = False
-            
-            
-        # for param in self.mem_n2n.att1.parameters():
-        #     param.requires_grad = False
-        
-        # for param in self.mem_n2n.att2.parameters():
-        #     param.requires_grad = False
-            
+            param.requires_grad = True
         for param in self.mem_n2n.FC_output.parameters():
-            param.requires_grad = False
+            param.requires_grad = True
         for param in self.mem_n2n.convScene_1.parameters():
             param.requires_grad = True
         for param in self.mem_n2n.convScene_2.parameters():
@@ -161,6 +149,13 @@ class Trainer:
         for param in self.mem_n2n.RNN_scene.parameters():
             param.requires_grad = True
         for param in self.mem_n2n.fc_refine.parameters():
+            param.requires_grad = True
+            
+        for param in self.mem_n2n.attn1.parameters():
+            param.requires_grad = True
+        for param in self.mem_n2n.attn2.parameters():
+            param.requires_grad = True
+        for param in self.mem_n2n.RNN_scene2.parameters():
             param.requires_grad = True
 
         # Load memory
