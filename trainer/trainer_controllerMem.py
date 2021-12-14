@@ -20,7 +20,6 @@ import time
 import tqdm
 
 
-
 class Trainer():
     def __init__(self, config):
         """
@@ -71,8 +70,7 @@ class Trainer():
             "dim_embedding_key": config.dim_embedding_key,
             "num_prediction": config.preds,
             "past_len": config.past_len,
-            "future_len": config.future_len,
-            "att_size": config.att_size
+            "future_len": config.future_len
         }
         self.max_epochs = config.max_epochs
         # load pretrained model and create memory model
@@ -101,9 +99,6 @@ class Trainer():
         self.writer.add_text('Training Configuration', 'batch_size: {}'.format(self.config.batch_size), 0)
         self.writer.add_text('Training Configuration', 'learning rate init: {}'.format(self.config.learning_rate), 0)
         self.writer.add_text('Training Configuration', 'dim_embedding_key: {}'.format(self.config.dim_embedding_key), 0)
-        
-        #self.writer.add_graph(self.model)
-
 
     def write_details(self):
         """
@@ -136,13 +131,6 @@ class Trainer():
             param.requires_grad = False
         for param in self.mem_n2n.decoder.parameters():
             param.requires_grad = False
-
-        # for param in self.mem_n2n.att1.parameters():
-        #     param.requires_grad = False
-        
-        # for param in self.mem_n2n.att2.parameters():
-        #     param.requires_grad = False
-            
         for param in self.mem_n2n.FC_output.parameters():
             param.requires_grad = False
 
@@ -176,17 +164,8 @@ class Trainer():
                 self.writer.add_scalar('accuracy_test/Horizon30s', dict_metrics_test['horizon30s'], epoch)
                 self.writer.add_scalar('accuracy_test/Horizon40s', dict_metrics_test['horizon40s'], epoch)
 
-                # # Save model checkpoint
+                # Save model checkpoint
                 torch.save(self.mem_n2n, self.folder_test + 'model_controller_epoch_' + str(epoch) + '_' + self.name_test)
-
-                # # quota _time
-                # qt = quota('8h', '4m')
-                # if qt.time_up():
-                # # Save model checkpoint
-                #     torch.save(self.mem_n2n, self.folder_test + 'model_controller_epoch_' + str(epoch) + '_' + self.name_test)
-                #     break
-
-
 
                 # print memory on tensorboard
                 mem_size = self.mem_n2n.memory_past.shape[0]
