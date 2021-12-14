@@ -392,4 +392,3 @@ class Trainer:
         # save memory
         torch.save(self.mem_n2n.memory_past, self.folder_test + 'memory_past.pt')
         torch.save(self.mem_n2n.memory_fut, self.folder_test + 'memory_fut.pt')
-
