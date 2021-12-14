@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import matplotlib.pyplot as plt
 import random
 
 class model_memory_IRM(nn.Module):
@@ -39,19 +40,11 @@ class model_memory_IRM(nn.Module):
         self.encoder_past = model_pretrained.encoder_past
         self.encoder_fut = model_pretrained.encoder_fut
         self.decoder = model_pretrained.decoder
-        
-
-        self.attn1 = nn.Linear(self.dim_embedding_key + self.dim_embedding_key, self.att_size)
-        self.attn2 = nn.Linear(self.att_size, 1)
-        
         self.FC_output = model_pretrained.FC_output
-       
-        
         self.relu = nn.ReLU()
-        self.softmax = nn.Softmax()
-        self.leaky_relu = nn.LeakyReLU(0.1)
         self.softmax_att = nn.Softmax(dim=0)
         self.tanh = nn.Tanh()
+
 
         self.maxpool2d = torch.nn.MaxPool2d(kernel_size=2, stride=2)
 
@@ -66,9 +59,14 @@ class model_memory_IRM(nn.Module):
             nn.ReLU(), nn.BatchNorm2d(16))
 
         self.RNN_scene = nn.GRU(16, self.dim_embedding_key, 1, batch_first=True)
-        
+        self.RNN_scene2 = nn.GRU(self.dim_embedding_key*2, self.dim_embedding_key,1, batch_first=False)
+
+        self.attn1 = nn.Linear(2*self.dim_embedding_key + self.dim_embedding_key ,  self.att_size)
+        self.attn2 = nn.Linear(self.att_size, 1)
+        self.dropout = nn.Dropout(0.2)
+
         # refinement fc layer
-        self.fc_refine = nn.Linear(self.dim_embedding_key, self.future_len * 2)
+        self.fc_refine = nn.Linear(self.dim_embedding_key,  self.future_len*2)
 
         self.reset_parameters()
 
@@ -77,24 +75,29 @@ class model_memory_IRM(nn.Module):
         nn.init.kaiming_normal_(self.RNN_scene.weight_hh_l0)
         nn.init.kaiming_normal_(self.RNN_scene.weight_ih_l0)
         nn.init.kaiming_normal_(self.RNN_scene.weight_hh_l0)
+        nn.init.kaiming_normal_(self.RNN_scene2.weight_ih_l0)
+        nn.init.kaiming_normal_(self.RNN_scene2.weight_hh_l0)
+        nn.init.kaiming_normal_(self.RNN_scene2.weight_ih_l0)
+        nn.init.kaiming_normal_(self.RNN_scene2.weight_hh_l0)
         nn.init.kaiming_normal_(self.convScene_1[0].weight)
         nn.init.kaiming_normal_(self.convScene_2[0].weight)
         nn.init.kaiming_normal_(self.fc_refine.weight)
-        
         nn.init.kaiming_normal_(self.attn1.weight)
         nn.init.kaiming_normal_(self.attn2.weight)
-    
+        
         nn.init.zeros_(self.RNN_scene.bias_ih_l0)
         nn.init.zeros_(self.RNN_scene.bias_hh_l0)
         nn.init.zeros_(self.RNN_scene.bias_ih_l0)
         nn.init.zeros_(self.RNN_scene.bias_hh_l0)
+        nn.init.zeros_(self.RNN_scene2.bias_ih_l0)
+        nn.init.zeros_(self.RNN_scene2.bias_hh_l0)
+        nn.init.zeros_(self.RNN_scene2.bias_ih_l0)
+        nn.init.zeros_(self.RNN_scene2.bias_hh_l0)
         nn.init.zeros_(self.convScene_1[0].bias)
         nn.init.zeros_(self.convScene_2[0].bias)
         nn.init.zeros_(self.fc_refine.bias)
-
         nn.init.zeros_(self.attn1.bias)
         nn.init.zeros_(self.attn2.bias)
-        
         
     def init_memory(self, data_train):
         """
@@ -109,18 +112,19 @@ class model_memory_IRM(nn.Module):
         j = random.randint(0, len(data_train)-1)
         past = data_train[j][1].unsqueeze(0)
         future = data_train[j][2].unsqueeze(0)
+
         past = past.cuda()
         future = future.cuda()
 
         # past encoding
         past = torch.transpose(past, 1, 2)
-        story_embed = self.leaky_relu(self.conv_past(past))
+        story_embed = self.relu(self.conv_past(past))
         story_embed = torch.transpose(story_embed, 1, 2)
         output_past, state_past = self.encoder_past(story_embed)
 
         # future encoding
         future = torch.transpose(future, 1, 2)
-        future_embed = self.leaky_relu(self.conv_fut(future))
+        future_embed = self.relu(self.conv_fut(future))
         future_embed = torch.transpose(future_embed, 1, 2)
         output_fut, state_fut = self.encoder_fut(future_embed)
 
@@ -140,9 +144,9 @@ class model_memory_IRM(nn.Module):
         :param past: past trajectory
         :param scene: surrounding map
         :return: predicted future
-        """        
+        """
         dim_batch = past.size()[0]
-        zero_padding = torch.zeros(1, dim_batch * self.num_prediction, self.dim_embedding_key * 2).cuda() #[1,32*5,96]
+        zero_padding = torch.zeros(1, dim_batch * self.num_prediction, self.dim_embedding_key * 2).cuda()
         prediction = torch.Tensor().cuda()
         present_temp = past[:, -1].unsqueeze(1)
 
@@ -159,59 +163,53 @@ class model_memory_IRM(nn.Module):
         self.index_max = torch.sort(self.weight_read, descending=True)[1].cpu()[:, :self.num_prediction]
 
         present = present_temp.repeat_interleave(self.num_prediction, dim=0)
+        present2 = present_temp.repeat_interleave(self.num_prediction, dim=0)
         state_past = state_past.repeat_interleave(self.num_prediction, dim=1)
         ind = self.index_max.flatten()
 
         info_future = self.memory_fut[ind]
         info_total = torch.cat((state_past, info_future.unsqueeze(0)), 2)
-        
-        # h = state_past.unsqueeze(0) #[32,48]   
-        # h2 = info_future.unsqueeze(0) #[32,48]
-                    
-        # hp =  state_past
-        # hf =  info_future.unsqueeze(0)
-        
         input_dec = info_total
-        state_dec = zero_padding
-        for i in range(self.future_len):
-                
-            # att_wts = self.softmax_att(self.attn2(self.tanh(self.attn1(torch.cat(  (hp.repeat(hp.shape[0], 1, 1), #[1,32,96]
-            #                                                                      hf.repeat(hf.shape[0], 1, 1) )  , 2))))) #[1,32,1]
+        state_dec = zero_padding  
 
-            # ip = att_wts.repeat(1, 1, input_dec.shape[2])*input_dec # before [1,96]
-            # ip = ip.unsqueeze(1)
-            # ip = ip.sum(dim=0) # [1,1,96]
-            
-            # output_decoder, state_dec = self.decoder(ip, state_dec)
-            output_decoder, state_dec = self.decoder(input_dec, state_dec)
+        for i in range(self.future_len):
+            output_decoder, state_dec = self.decoder(input_dec,state_dec)
+            # dr =  self.dropout(output_decoder)
             displacement_next = self.FC_output(output_decoder)
             coords_next = present + displacement_next.squeeze(0).unsqueeze(1)
             prediction = torch.cat((prediction, coords_next), 1)
             present = coords_next
-            input_dec = zero_padding
-
+            input_dec = zero_padding  
+            
         if scene is not None:
-            # scene encoding
             scene = scene.permute(0, 3, 1, 2)
             scene_1 = self.convScene_1(scene)
             scene_2 = self.convScene_2(scene_1)
             scene_2 = scene_2.repeat_interleave(self.num_prediction, dim=0)
 
-            # Iteratively refine predictions using context
-            for i_refine in range(4):
+            for i_refine in range(12):
                 pred_map = prediction + 90
                 pred_map = pred_map.unsqueeze(2)
                 indices = pred_map.permute(0, 2, 1, 3)
                 # rescale between -1 and 1
                 indices = 2 * (indices / 180) - 1
-                output = F.grid_sample(scene_2, indices, mode='nearest')
-                output = output.squeeze(2).permute(0, 2, 1)
-
+                output = F.grid_sample(scene_2, indices, mode='nearest')  #[160,16,1,40]
+                output = output.squeeze(2).permute(0, 2, 1)  #[160,40,16]
+                # output1 = output.permute(2, 0, 1,3)  #[160,40,16]
+                # output1 = output1.mean(3) # [1, 160, 16]
+                # output1 = output1.repeat_interleave(3, dim=2)
                 state_rnn = state_past
-                output_rnn, state_rnn = self.RNN_scene(output, state_rnn)
-                prediction_refine = self.fc_refine(state_rnn).view(-1, self.future_len, 2)
+                output_rnn, state_rnn = self.RNN_scene(output, state_rnn )               
+
+                att_wts = self.softmax_att(self.attn2(self.tanh(self.attn1(  torch.cat((state_rnn.repeat(info_total.shape[0], 1, 1), info_total), 2) ))))
+                ip = att_wts.repeat(1, 1, info_total.shape[2])*info_total
+                ip = ip.unsqueeze(1)
+                ip = ip.sum(dim=0) 
+                output_rnn, state_rnn= self.RNN_scene2(ip, state_rnn)
+                prediction_refine = self.fc_refine(state_rnn).view(-1, self.future_len, 2) 
                 prediction = prediction + prediction_refine
 
+                    
         prediction = prediction.view(dim_batch, self.num_prediction, self.future_len, 2)
         return prediction
 
@@ -234,7 +232,7 @@ class model_memory_IRM(nn.Module):
 
         # past temporal encoding
         past = torch.transpose(past, 1, 2)
-        story_embed = self.leaky_relu(self.conv_past(past))
+        story_embed = self.relu(self.conv_past(past))
         story_embed = torch.transpose(story_embed, 1, 2)
         output_past, state_past = self.encoder_past(story_embed)
 
@@ -249,25 +247,10 @@ class model_memory_IRM(nn.Module):
         ind = index_max.flatten()
         info_future = self.memory_fut[ind]
         info_total = torch.cat((state_past_repeat, info_future.unsqueeze(0)), 2)
-        
-        # h = state_past_repeat.unsqueeze(0) #[32,48]    
-        # h2 = info_future.unsqueeze(0) #[32,48]
-                    
-        hp =  state_past
-        hf =  info_future.unsqueeze(0)
-        
         input_dec = info_total
         state_dec = zero_padding
         for i in range(self.future_len):
-            
-            att_wts = self.softmax_att(self.attn2(self.tanh(self.attn1(torch.cat(  (hp.repeat(hp.shape[0], 1, 1), #[1,32,96]
-                                                                                 hf.repeat(hf.shape[0], 1, 1) )  , 2))))) #[1,32,1]
-
-            ip = att_wts.repeat(1, 1, input_dec.shape[2])*input_dec # before [1,96]
-            ip = ip.unsqueeze(1)
-            ip = ip.sum(dim=0) # [1,1,96]
-            
-            output_decoder, state_dec = self.decoder(ip, state_dec)
+            output_decoder, state_dec = self.decoder(input_dec, state_dec)
             displacement_next = self.FC_output(output_decoder)
             coords_next = present + displacement_next.squeeze(0).unsqueeze(1)
             prediction = torch.cat((prediction, coords_next), 1)
@@ -276,24 +259,33 @@ class model_memory_IRM(nn.Module):
 
         # Iteratively refine predictions using context
         if scene is not None:
-            # scene encoding
             scene = scene.permute(0, 3, 1, 2)
             scene_1 = self.convScene_1(scene)
             scene_2 = self.convScene_2(scene_1)
             scene_2 = scene_2.repeat_interleave(num_prediction, dim=0)
-            for i_refine in range(4):
+            for i_refine in range(12):
                 pred_map = prediction + 90
                 pred_map = pred_map.unsqueeze(2)
                 indices = pred_map.permute(0, 2, 1, 3)
                 # rescale between -1 and 1
                 indices = 2 * (indices / 180) - 1
-                output = F.grid_sample(scene_2, indices, mode='nearest')
-                output = output.squeeze(2).permute(0, 2, 1)
+                output = F.grid_sample(scene_2, indices, mode='nearest')  #[160,16,1,40]
+                output = output.squeeze(2).permute(0, 2, 1)  #[160,40,16]
+                # output1 = output.permute(2, 0, 1,3)  #[160,40,16]
+                # output1 = output1.mean(3) # [1, 160, 16]
+                # output1 = output1.repeat_interleave(3, dim=2)
+                state_rnn = state_past
+                output_rnn, state_rnn = self.RNN_scene(output, state_rnn )               
 
-                state_rnn = state_past_repeat
-                output_rnn, state_rnn = self.RNN_scene(output, state_rnn)
-                prediction_refine = self.fc_refine(state_rnn).view(-1, self.future_len, 2)
+                att_wts = self.softmax_att(self.attn2(self.tanh(self.attn1(  torch.cat((state_rnn.repeat(info_total.shape[0], 1, 1), info_total), 2) ))))
+                ip = att_wts.repeat(1, 1, info_total.shape[2])*info_total
+                ip = ip.unsqueeze(1)
+                ip = ip.sum(dim=0) 
+                output_rnn, state_rnn= self.RNN_scene2(ip, state_rnn)
+                prediction_refine = self.fc_refine(state_rnn).view(-1, self.future_len, 2) 
                 prediction = prediction + prediction_refine
+
+                
         prediction = prediction.view(dim_batch, num_prediction, self.future_len, 2)
 
         future_rep = future.unsqueeze(1).repeat(1, num_prediction, 1, 1)
@@ -311,7 +303,7 @@ class model_memory_IRM(nn.Module):
 
         # future encoding
         future = torch.transpose(future, 1, 2)
-        future_embed = self.leaky_relu(self.conv_fut(future))
+        future_embed = self.relu(self.conv_fut(future))
         future_embed = torch.transpose(future_embed, 1, 2)
         output_fut, state_fut = self.encoder_fut(future_embed)
 
