@@ -13,9 +13,6 @@ from models.model_encdec import model_encdec
 import dataset_invariance
 from torch.autograd import Variable
 import tqdm
-# from tquota import quota
-# import time
-# import sys
 
 
 class Trainer:
@@ -67,8 +64,6 @@ class Trainer:
             "dim_embedding_key": config.dim_embedding_key,
             "past_len": config.past_len,
             "future_len": config.future_len,
-            "att_size": config.att_size
-
         }
         self.max_epochs = config.max_epochs
 
@@ -86,20 +81,6 @@ class Trainer:
         self.start_epoch = 0
         self.config = config
 
-        #####################################################################################################
-        # s2 = []
-        # for ep in range(0, 601):
-        #     path = self.folder_test + 'model_controller_epoch_' + str(ep) + '_' + self.name_test
-        #     if os.path.exists(path):
-        #         s2.insert(len(s2) - 1, ep)
-
-        # if s2:
-        #     path = self.folder_test + 'model_controller_epoch_' + str(max(s2)) + '_' + self.name_test
-        #     checkpoint = torch.load(path)
-        #     self.mem_n2n.load_state_dict(checkpoint['model_state_dict'])
-        #     self.start_epoch = max(s2) + 1
-        ####################################################################################################
-
         # Write details to file
         self.write_details()
         self.file.close()
@@ -112,7 +93,6 @@ class Trainer:
         self.writer.add_text('Training Configuration', 'batch_size: {}'.format(self.config.batch_size), 0)
         self.writer.add_text('Training Configuration', 'learning rate init: {}'.format(self.config.learning_rate), 0)
         self.writer.add_text('Training Configuration', 'dim_embedding_key: {}'.format(self.config.dim_embedding_key), 0)
-        
 
     def write_details(self):
         """
@@ -170,11 +150,8 @@ class Trainer:
         """
         config = self.config
         # Training loop
-        ####################################################################################################
-        # # quota _time
-        # qt = quota('2m', '10s')
-        ####################################################################################################
         for epoch in range(self.start_epoch, config.max_epochs):
+
             print(' ----- Epoch: {}'.format(epoch))
             loss = self._train_single_epoch()
             print('Loss: {}'.format(loss))
@@ -203,7 +180,7 @@ class Trainer:
                 self.writer.add_scalar('accuracy_test/Horizon20s', dict_metrics_test['horizon20s'], epoch)
                 self.writer.add_scalar('accuracy_test/Horizon30s', dict_metrics_test['horizon30s'], epoch)
                 self.writer.add_scalar('accuracy_test/Horizon40s', dict_metrics_test['horizon40s'], epoch)
-               
+
                 # Save model checkpoint
                 torch.save(self.mem_n2n, self.folder_test + 'model_ae_epoch_' + str(epoch) + '_' + self.name_test)
 
@@ -211,22 +188,8 @@ class Trainer:
                 for name, param in self.mem_n2n.named_parameters():
                     self.writer.add_histogram(name, param.data, epoch)
 
-            #############################################################################################################
-
-            # time.sleep(1)
-            # if qt.time_up():
-            #     torch.save({
-            #         'epoch': epoch,
-            #         'model_state_dict': self.mem_n2n.state_dict(),},
-            #         self.folder_test + 'model_controller_epoch_' + str(epoch) + '_' + self.name_test)
-            #     print(epoch)
-            #     print(loss)
-            #     sys.exit("Exit from Session")
-        #############################################################################################################
-
         # Save final trained model
         torch.save(self.mem_n2n, self.folder_test + 'model_ae_' + self.name_test)
-        # self.writer.add_graph(self.mem_n2n)
 
     def evaluate(self, loader, epoch=0):
         """
